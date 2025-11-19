@@ -1,4 +1,6 @@
-// engine/resolver.js — Engine class gluing everything (MVP)
+// engine/resolver.js — Engine class gluing everything (MVP) + keyword system
+const fs = require('fs');
+const path = require('path');
 const { Emitter } = require('./events');
 const effects = require('./effects');
 const { loadCards } = require('./state');
@@ -13,6 +15,11 @@ class Engine extends Emitter {
     this.sockets = {};
     this.entityCounter = 1;
     this.stack = [];
+
+    // keyword registry
+    this.keywords = {};
+    // make sure Emitter can call applyKeywordEvent via this.applyKeywordEvent
+    this.loadKeywords();
   }
 
   nextEntityId(){ return `e${this.entityCounter++}`; }
@@ -62,6 +69,7 @@ class Engine extends Emitter {
     return null;
   }
 
+  // ---- Stack / resolution ----
   pushToStack(action){ this.stack.push(action); this.resolveStack(); }
 
   resolveStack(){
@@ -75,6 +83,7 @@ class Engine extends Emitter {
     for (const pid of Object.keys(this.players)) this.sendState(pid);
   }
 
+  // ---- Intents ----
   handleIntent(playerId, intent){
     // intents: {type:'play_card', cardId}
     if (intent.type === 'play_card'){
@@ -108,6 +117,46 @@ class Engine extends Emitter {
     };
     p.socket.send(JSON.stringify(dto));
   }
+
+  // ---- Keywords system ----
+  loadKeywords() {
+    try {
+      const kwDir = path.resolve(__dirname, 'keywords');
+      if (!fs.existsSync(kwDir)) return;
+      const files = fs.readdirSync(kwDir).filter(f=>f.endsWith('.js'));
+      for (const f of files) {
+        const name = f.replace('.js','');
+        try {
+          this.keywords[name] = require(path.join(kwDir, f));
+          this.log(`Loaded keyword ${name}`);
+        } catch (e) {
+          console.error('Failed to load keyword', f, e);
+        }
+      }
+    } catch (e) {
+      console.error('loadKeywords error', e);
+    }
+  }
+
+  applyKeywordEvent(eventName, payload) {
+    // iterate all units on board and call keyword handlers
+    for (const p of Object.values(this.players)) {
+      for (const u of p.board) {
+        const def = this.cards[u.cardId] || {};
+        for (const kw of (def.keywords||[])) {
+          const mod = this.keywords[kw];
+          if (mod && typeof mod[eventName] === 'function') {
+            try {
+              mod[eventName](this, { unit: u, payload });
+            } catch (e) {
+              console.error('keyword handler error', kw, eventName, e);
+            }
+          }
+        }
+      }
+    }
+  }
+
 }
 
 module.exports = { Engine };
