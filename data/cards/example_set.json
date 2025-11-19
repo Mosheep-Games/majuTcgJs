@@ -1,0 +1,23 @@
+{
+  "cards": [
+    {
+      "id": "grunt",
+      "name": "Grunt",
+      "type": "unit",
+      "stats": { "attack": 1, "health": 2, "cost": 1 }
+    },
+    {
+      "id": "fireball",
+      "name": "Fireball",
+      "type": "spell",
+      "effects": [ { "action": "DealDamage", "target": { "type": "board", "playerId": "opponent", "index": 0 }, "value": 2 } ]
+    },
+    {
+      "id": "pyromancer",
+      "name": "Pyromancer",
+      "type": "unit",
+      "stats": { "attack": 2, "health": 2, "cost": 2 },
+      "effects": [ { "event": "OnEnter", "action": "DealDamage", "target": { "type": "board", "playerId": "opponent", "index": 0 }, "value": 1 } ]
+    }
+  ]
+}
