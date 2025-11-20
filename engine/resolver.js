@@ -1,4 +1,6 @@
 // engine/resolver.js — Engine with priority/response window and keyword-aware attacks
+const { parse } = require('./script_parser');
+const { executeScript } = require('./script_runtime');
 const fs = require('fs');
 const path = require('path');
 const { Emitter } = require('./events');
@@ -248,13 +250,19 @@ class Engine extends Emitter {
           const action = { effect: 'Summon', params: { playerId, cardId: intent.cardId }, sourcePlayerId: playerId, speed };
           this.pushToStack(action);
         } else if (def.type === 'spell') {
-          for (const ef of def.effects || []) {
-            const params = Object.assign({ playerId }, ef);
-            if (intent.targetId && ef.target && ef.target.type === 'entity') params.target = { type:'entity', id: intent.targetId };
-            const action = { effect: ef.action, params, sourcePlayerId: playerId, speed: def.speed || 'Slow' };
-            this.pushToStack(action);
-          }
-        }
+
+    // 1. script > effects
+    if (def.script) {
+        const ast = parse(def.script);
+        executeScript(this, playerId, ast, intent.targetId);
+    }
+
+    // 2. efeitos tradicionais (mantém compatibilidade)
+    for (const ef of def.effects || []) {
+        this.pushToStack({ effect: ef.action, params: { ...ef, playerId } });
+    }
+}
+
         return;
       }
 
