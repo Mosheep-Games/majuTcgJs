@@ -28,7 +28,7 @@ Este repositório contém um **motor TCG data-driven** em Node.js (servidor auto
 - Cartas podem ter `cost` no JSON; o servidor valida e subtrai o custo ao jogar.
 - O cliente exibe mana (current / max).
 
-## Roadmap (o que vamos fazer a seguir, na ordem solicitada)
+## Roadmap (Qual a ideia - at´é aqui pelo menos)
 1. **Sistema de Mana/Recursos** — *feito (esta versão)*  
 2. **Sistema de Morte & Cleanup** — remover entidades mortas, ordem de resolução de mortes, garantir triggers `OnDie` e `LastBreath` funcionem antes da remoção.  
 3. **Priority/Stack Avançado** — permitir respostas do oponente (fast/slow/burst), janela de prioridade e resolução por camadas (stack).  
