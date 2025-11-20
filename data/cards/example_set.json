@@ -4,20 +4,31 @@
       "id": "grunt",
       "name": "Grunt",
       "type": "unit",
-      "stats": { "attack": 1, "health": 2, "cost": 1 }
+      "cost": 1,
+      "stats": { "attack": 1, "health": 2 }
     },
     {
       "id": "fireball",
       "name": "Fireball",
       "type": "spell",
-      "effects": [ { "action": "DealDamage", "target": { "type": "board", "playerId": "opponent", "index": 0 }, "value": 2 } ]
+      "cost": 2,
+      "effects": [ { "action": "DealDamage", "target": { "type": "entity", "id": null }, "value": 2 } ]
     },
     {
       "id": "pyromancer",
       "name": "Pyromancer",
       "type": "unit",
-      "stats": { "attack": 2, "health": 2, "cost": 2 },
-      "effects": [ { "event": "OnEnter", "action": "DealDamage", "target": { "type": "board", "playerId": "opponent", "index": 0 }, "value": 1 } ]
+      "cost": 2,
+      "stats": { "attack": 2, "health": 2 },
+      "effects": [ { "event": "OnEnter", "action": "DealDamage", "target": { "type": "entity", "id": null }, "value": 1 } ]
+    },
+    {
+      "id": "vampire_knight",
+      "name": "Vampire Knight",
+      "type": "unit",
+      "cost": 3,
+      "stats": { "attack": 3, "health": 2 },
+      "keywords": ["lifesteal"]
     }
   ]
 }
