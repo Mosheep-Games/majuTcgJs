@@ -54,3 +54,16 @@ Este repositório contém um **motor TCG data-driven** em Node.js (servidor auto
   - dispara keyword `lastbreath` se existir
 - Efeitos desses triggers entram em stack normal.
 - Após resolução, unidades são removidas do board.
+
+### Fase 3 — Priority / Stack Avançado (Burst / Fast / Slow)
+
+- Implementadas três velocidades:
+  - **Burst** — resolve imediatamente (não abre janela de prioridade).
+  - **Fast** — vai para a stack e pode ser respondida (abre prioridade).
+  - **Slow** — vai para a stack e pode ser respondida (abre prioridade).
+- Quando a primeira non-burst ação entra no stack, abre-se uma janela de prioridade.
+  - Jogadores podem responder com Fast/Slow actions (ou jogar Burst which resolves immediately).
+  - Jogadores podem **Pass**.
+  - Quando **todos os jogadores passarem**, a pilha é resolvida **LIFO** (top primeiro).
+- O servidor envia ao cliente `priority.active` e `stackDepth` no estado para permitir UI de respostas.
+- `data/cards/*.json` agora pode ter `speed` (Burst/Fast/Slow) e `cost`.

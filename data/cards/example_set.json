@@ -5,6 +5,7 @@
       "name": "Grunt",
       "type": "unit",
       "cost": 1,
+      "speed": "Slow",
       "stats": { "attack": 1, "health": 2 }
     },
     {
@@ -12,6 +13,7 @@
       "name": "Fireball",
       "type": "spell",
       "cost": 2,
+      "speed": "Fast",
       "effects": [ { "action": "DealDamage", "target": { "type": "entity", "id": null }, "value": 2 } ]
     },
     {
@@ -19,6 +21,7 @@
       "name": "Pyromancer",
       "type": "unit",
       "cost": 2,
+      "speed": "Slow",
       "stats": { "attack": 2, "health": 2 },
       "effects": [ { "event": "OnEnter", "action": "DealDamage", "target": { "type": "entity", "id": null }, "value": 1 } ]
     },
@@ -27,6 +30,7 @@
       "name": "Vampire Knight",
       "type": "unit",
       "cost": 3,
+      "speed": "Slow",
       "stats": { "attack": 3, "health": 2 },
       "keywords": ["lifesteal"]
     }
