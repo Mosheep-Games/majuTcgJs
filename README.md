@@ -77,4 +77,15 @@ Este repositório contém um **motor TCG data-driven** em Node.js (servidor auto
 - Suporte a "play card", "attack", "pass" e "end phase".
 - Animações simples incluídas (flashRed).
 
+### Fase 5 — Keywords completo (Fury, Lifesteal, QuickAttack, Challenger, Barrier, Poison, Regen)
+
+- `lifesteal`: quando a unidade causa dano, cura o dono em igual quantidade.
+- `fury`: quando uma unidade mata outra, ganha +1/+1.
+- `quickattack`: faz o atacante aplicar seu dano antes da retaliação (é implementado via `OnAttack` e marca o ataque como `handled`).
+- `challenger`: ao entrar, "provoca" (taunt) uma unidade inimiga simples (marca `provokedBy`).
+- `barrier`: bloqueia o próximo dano (consome-se).
+- `poison`: dano por contadores no início do turno do dono.
+- `regen`: cura por contadores no início do turno do dono.
+
+**Nota:** implementei keywords como módulos JS que são carregados automaticamente pelo `resolver`. Keywords reagem a eventos (OnEnter, OnAttack, OnDamageDealt, OnDie, OnTurnStart, ...). O motor principal emite eventos e o `events.js` chama `applyKeywordEvent` via `Engine.applyKeywordEvent` para disparar essas funções.
 

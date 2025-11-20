@@ -1,14 +1,14 @@
 module.exports = {
-  // payload: { source, target, amount }
-  OnDamageDealt: (ctx, ctxobj) => {
+  // payload: { source, target, amount } OR in our engine it is { unit, payload } because applyKeywordEvent wraps it
+  OnDamageDealt: (engine, ctxobj) => {
     const { unit, payload } = ctxobj;
-    // lifesteal applies if the unit with this keyword is the source of the damage
     if (!payload || !payload.source) return;
+    // lifesteal triggers only if this unit was the source
     if (payload.source.id !== unit.id) return;
-    // heal owner for the amount
-    const owner = ctx.getPlayer(unit.ownerId);
+    const owner = engine.getPlayer(unit.ownerId);
     if (!owner) return;
-    owner.life += payload.amount || 0;
-    ctx.log(`Lifesteal: healed player ${owner.id} for ${payload.amount || 0}`);
+    const amount = payload.amount || 0;
+    owner.life = (owner.life || 0) + amount;
+    engine.log(`Lifesteal: healed player ${owner.id} for ${amount}`);
   }
 };
