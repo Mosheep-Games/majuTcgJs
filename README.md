@@ -97,3 +97,12 @@ Este repositório contém um **motor TCG data-driven** em Node.js (servidor auto
 - Deckbuilding: envie `intent` do tipo `set_deck` com uma lista de cardIds para configurar o deck antes da partida.
 - Mulligan: envie `intent` do tipo `mulligan` com `keep: [cardId,...]` para escolher quais cartas manter da mão inicial; o restante volta para o deck e é embaralhado.
 - Persistência: `engine.saveGameTo(path)` / `engine.loadGameFrom(path)` permitem exportar/importar estado para debugging ou replay.
+
+### Fase 8 — Zonas avançadas, triggers de movimento e replacement effects
+
+- Novas zonas: `banished` (removido permanentemente) e `limbo` (para efeitos em espera).
+- `zones.moveBetweenZones(engine, ownerId, item, from, to, opts)` centraliza lógica de movimento de objetos entre zonas.
+- Eventos lançados: `OnMove({item,from,to,ownerId})`, `OnEnterPlay`, `OnLeavePlay`, `OnEnterGraveyard`, `OnEnterExile`.
+- Replacement effects declarativos: `replacement` no JSON de cartas permite substituir destino (ex.: "em vez de ir ao graveyard, vá para exile").
+- Novos efeitos utilitários: `Recall`, `Obliterate`, `ReturnToHand`, `Revive`, `Reanimate`.
+- A pipeline de morte processa replacements antes de mover entidades para zonas finais.

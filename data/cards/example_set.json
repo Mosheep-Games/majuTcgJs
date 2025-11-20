@@ -1,38 +1,52 @@
 {
   "cards": [
     {
-      "id": "grunt",
-      "name": "Grunt",
-      "type": "unit",
-      "cost": 1,
-      "speed": "Slow",
-      "stats": { "attack": 1, "health": 2 }
-    },
-    {
-      "id": "fireball",
-      "name": "Fireball",
-      "type": "spell",
-      "cost": 2,
-      "speed": "Fast",
-      "effects": [ { "action": "DealDamage", "target": { "type": "entity", "id": null }, "value": 2 } ]
-    },
-    {
-      "id": "pyromancer",
-      "name": "Pyromancer",
-      "type": "unit",
-      "cost": 2,
-      "speed": "Slow",
-      "stats": { "attack": 2, "health": 2 },
-      "effects": [ { "event": "OnEnter", "action": "DealDamage", "target": { "type": "entity", "id": null }, "value": 1 } ]
-    },
-    {
-      "id": "vampire_knight",
-      "name": "Vampire Knight",
+      "id": "soulbound_knight",
+      "name": "Soulbound Knight",
       "type": "unit",
       "cost": 3,
-      "speed": "Slow",
       "stats": { "attack": 3, "health": 2 },
-      "keywords": ["lifesteal"]
+      "keywords": ["lastbreath"],
+      "replacement": [
+        {
+          "on": "death",
+          "from": "board",
+          "to": "graveyard",
+          "instead": { "moveTo": "exile" }
+        }
+      ],
+      "effects": []
+    },
+    {
+      "id": "resurrector",
+      "name": "Resurrector",
+      "type": "unit",
+      "cost": 4,
+      "stats": { "attack": 2, "health": 4 },
+      "effects": [
+        {
+          "action": "Revive",
+          "cardId": "soulbound_knight"
+        }
+      ]
+    },
+    {
+      "id": "banisher",
+      "name": "Banisher",
+      "type": "spell",
+      "cost": 2,
+      "effects": [
+        { "action": "Obliterate", "target": { "type": "entity", "id": null } }
+      ]
+    },
+    {
+      "id": "bounce_spell",
+      "name": "Bounce",
+      "type": "spell",
+      "cost": 1,
+      "effects": [
+        { "action": "ReturnToHand", "playerId": null, "cardId": null }
+      ]
     }
   ]
 }
