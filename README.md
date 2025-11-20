@@ -89,3 +89,11 @@ Este repositório contém um **motor TCG data-driven** em Node.js (servidor auto
 
 **Nota:** implementei keywords como módulos JS que são carregados automaticamente pelo `resolver`. Keywords reagem a eventos (OnEnter, OnAttack, OnDamageDealt, OnDie, OnTurnStart, ...). O motor principal emite eventos e o `events.js` chama `applyKeywordEvent` via `Engine.applyKeywordEvent` para disparar essas funções.
 
+
+### Fase 7 — Zonas, Deckbuilding, Mulligan e Persistência
+
+- Cada jogador tem zonas: `deck`, `hand`, `board`, `graveyard`, `exile`.
+- Novos efeitos: `MoveToZone`, `ShuffleDeck`, `Mill`, etc.
+- Deckbuilding: envie `intent` do tipo `set_deck` com uma lista de cardIds para configurar o deck antes da partida.
+- Mulligan: envie `intent` do tipo `mulligan` com `keep: [cardId,...]` para escolher quais cartas manter da mão inicial; o restante volta para o deck e é embaralhado.
+- Persistência: `engine.saveGameTo(path)` / `engine.loadGameFrom(path)` permitem exportar/importar estado para debugging ou replay.

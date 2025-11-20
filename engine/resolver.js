@@ -1,10 +1,9 @@
-// engine/resolver.js — Engine with priority/response window and keyword-aware attacks
-const { parse } = require('./script_parser');
-const { executeScript } = require('./script_runtime');
+// engine/resolver.js — resolver com zones, deckbuilding, mulligan e persistência
 const fs = require('fs');
 const path = require('path');
 const { Emitter } = require('./events');
 const effects = require('./effects');
+const { loadCards, shuffleArray, createPlayerState, drawFromDeck, saveGame, loadGame } = require('./state');
 const { v4: uuidv4 } = require('uuid');
 
 const PHASES = ['DRAW','MAIN','COMBAT','END'];
@@ -13,20 +12,20 @@ const MAX_MANA = 10;
 class Engine extends Emitter {
   constructor(cardsMap) {
     super();
-    this.cards = cardsMap || {}; // id -> card metadata
+    this.cards = cardsMap || {};
     this.players = {};
     this.playerOrder = [];
     this.sockets = {};
     this.entityCounter = 1;
 
-    // stack & priority
     this.stack = [];
     this.priority = { active: false, passes: {}, initiator: null };
-
-    // death queue
     this.deadQueue = [];
 
     this.turn = { currentPlayerIndex: 0, phase: null, number: 0, currentPlayerId: null };
+
+    // persisted metadata (optional)
+    this.meta = { createdAt: Date.now() };
 
     this.keywords = {};
     this.loadKeywords();
@@ -36,7 +35,8 @@ class Engine extends Emitter {
 
   addPlayer(){
     const id = uuidv4();
-    this.players[id] = { id, deck: [], hand: [], board: [], socket: null, life: 20, currentMana: 0, maxMana: 0 };
+    const p = createPlayerState(id);
+    this.players[id] = p;
     this.playerOrder.push(id);
     return id;
   }
@@ -48,30 +48,42 @@ class Engine extends Emitter {
 
   ready(){ return this.playerOrder.length >= 2; }
 
-  log(m){ console.log('[Engine]', m); }
-
-  getPlayer(id){ return this.players[id]; }
-
-  // ===== Entities/targeting =====
-  findEntityById(eid) {
-    for (const p of Object.values(this.players)) {
-      for (const u of p.board) if (u.id === eid) return u;
-    }
-    return null;
+  // ================= ZONES helpers =================
+  setDeckForPlayer(playerId, deckArray) {
+    const p = this.players[playerId];
+    if (!p) return false;
+    p.deck = deckArray.slice();
+    // basic validation: ensure items exist in card DB
+    p.deck = p.deck.filter(cid => this.cards[cid]);
+    // shuffle
+    p.deck.sort(()=>Math.random() - 0.5);
+    this.log(`Deck set for ${playerId} (${p.deck.length} cards)`);
+    return true;
   }
 
-  resolveTarget(spec){
-    if (!spec) return null;
-    if (spec.type === 'player') return this.players[spec.playerId];
-    if (spec.type === 'entity') return this.findEntityById(spec.id);
-    if (spec.type === 'board') {
-      const p = this.players[spec.playerId];
-      return p.board[spec.index || 0];
+  // mulligan simple approach:
+  // player sends intent: { type:'mulligan', keep: [cardId,...] }
+  // We return unkept cards to deck, shuffle, draw same count, keep one fewer? For simplicity we'll implement:
+  // player chooses KEEP list; non-kept are returned to deck and shuffled; then draw back to original hand size (3) (no further reductions).
+  applyMulligan(playerId, keepList = []) {
+    const p = this.players[playerId];
+    if (!p) return;
+    const initialHand = p.hand.slice();
+    // compute which to return
+    const toReturn = initialHand.filter(cid => !keepList.includes(cid));
+    // remove returns from hand
+    p.hand = initialHand.filter(cid => keepList.includes(cid));
+    // return to deck and shuffle
+    p.deck.push(...toReturn);
+    p.deck.sort(()=>Math.random()-0.5);
+    // draw up to original hand size (simple: 3)
+    while (p.hand.length < 3 && p.deck.length > 0) {
+      p.hand.push(p.deck.shift());
     }
-    return null;
+    this.log(`Mulligan for ${playerId}: kept ${p.hand.length} cards`);
   }
 
-  // ===== Death system =====
+  // ================= Death system (moves to graveyard) =================
   markForDeath(entity){
     if (!entity) return;
     if (!this.deadQueue.includes(entity)) {
@@ -83,90 +95,32 @@ class Engine extends Emitter {
   processDeaths(){
     if (this.deadQueue.length === 0) return;
     this.log(`Processing deaths: ${this.deadQueue.length}`);
-
-    // 1) Fire OnDie and lastbreath (keywords can push effects to stack)
+    // Fire OnDie and lastbreath (keywords may push new actions)
     for (const entity of this.deadQueue) {
       const def = this.cards[entity.cardId] || {};
       this.emit('OnDie', { entity, cardDef: def });
-
-      // keyword lastbreath hook (if module exists)
       if ((def.keywords || []).includes('lastbreath')) {
         const mod = this.keywords['lastbreath'];
         if (mod && typeof mod.OnDie === 'function') {
-          try { mod.OnDie(this, { unit: entity }); } catch (e) { console.error('lastbreath error', e); }
+          try { mod.OnDie(this, { unit: entity }); } catch (e) { console.error('lastbreath', e); }
         }
       }
     }
-
-    // 2) Remove from boards
+    // Remove from boards and move to owner's graveyard (if owner exists)
     for (const entity of this.deadQueue) {
       for (const p of Object.values(this.players)) {
-        const idx = p.board.indexOf(entity);
+        const idx = p.board.findIndex(u => u.id === entity.id);
         if (idx !== -1) {
-          p.board.splice(idx, 1);
-          this.log(`Removed entity ${entity.id} from board`);
+          const removed = p.board.splice(idx,1)[0];
+          p.graveyard.push(removed.cardId || removed);
+          this.log(`Moved ${removed.id} (${removed.cardId}) to graveyard of ${p.id}`);
         }
       }
     }
-
     this.deadQueue = [];
   }
 
-  // ===== Turn / Phase / Mana =====
-  start(){
-    // setup decks & initial hands
-    for (const pid of this.playerOrder) {
-      const player = this.players[pid];
-      player.deck = Object.keys(this.cards).slice();
-      player.deck.sort(()=>Math.random()-0.5);
-      for (let i=0;i<3;i++){ const c = player.deck.shift(); if (c) player.hand.push(c); }
-      this.sendState(pid);
-    }
-    this.turn.number = 1;
-    this.turn.currentPlayerIndex = 0;
-    this.turn.currentPlayerId = this.playerOrder[0];
-    this.turn.phase = 'DRAW';
-    this.emit('GameStart', {});
-    this.handlePhaseStart();
-  }
-
-  handlePhaseStart(){
-    const phase = this.turn.phase;
-    const pid = this.turn.currentPlayerId;
-    this.log(`Phase start ${phase} for ${pid}`);
-    if (phase === 'DRAW') {
-      const p = this.players[pid];
-      p.maxMana = Math.min(MAX_MANA, (p.maxMana || 0) + 1);
-      p.currentMana = p.maxMana;
-      const card = p.deck.shift();
-      if (card) { p.hand.push(card); this.emit('OnDraw', { playerId: pid, cardId: card }); }
-      this.advancePhase();
-    }
-  }
-
-  advancePhase(){
-    const idx = PHASES.indexOf(this.turn.phase);
-    if (idx === -1) { this.turn.phase = PHASES[0]; return; }
-    if (idx + 1 < PHASES.length) {
-      this.turn.phase = PHASES[idx+1];
-    } else {
-      return this.endTurn();
-    }
-    this.emit('PhaseChange', { phase: this.turn.phase, playerId: this.turn.currentPlayerId });
-    this.handlePhaseStart();
-    this.broadcastState();
-  }
-
-  endTurn(){
-    this.turn.currentPlayerIndex = (this.turn.currentPlayerIndex + 1) % this.playerOrder.length;
-    this.turn.currentPlayerId = this.playerOrder[this.turn.currentPlayerIndex];
-    this.turn.number += 1;
-    this.turn.phase = 'DRAW';
-    this.handlePhaseStart();
-    this.broadcastState();
-  }
-
-  // ===== Priority system =====
+  // ================= Stack / Priority (keeps previous behavior) =================
   openPriority(initiatorPlayerId){
     this.priority.active = true;
     this.priority.initiator = initiatorPlayerId;
@@ -187,20 +141,16 @@ class Engine extends Emitter {
       this.priority.active = false;
       this.priority.initiator = null;
       this.broadcastState();
-    } else {
-      this.broadcastState();
-    }
+    } else this.broadcastState();
   }
 
   resetPasses(){
     for (const pid of Object.keys(this.priority.passes || {})) this.priority.passes[pid] = false;
   }
 
-  // push action to stack: { effect, params, sourcePlayerId, speed }
   pushToStack(action){
     const speed = action.speed || 'Slow';
     if (speed === 'Burst') {
-      this.log(`Burst executing: ${action.effect}`);
       const fn = effects[action.effect];
       if (fn) fn(this, action.params || {});
       this.processDeaths();
@@ -208,7 +158,6 @@ class Engine extends Emitter {
       return;
     }
     this.stack.push(action);
-    this.log(`Pushed to stack [${speed}] ${action.effect}`);
     if (!this.priority.active) {
       const initiator = action.sourcePlayerId || (action.params && action.params.playerId);
       this.openPriority(initiator);
@@ -219,82 +168,81 @@ class Engine extends Emitter {
   }
 
   resolveStackLIFO(){
-    while(this.stack.length > 0){
-      const action = this.stack.pop();
-      this.log(`Resolving ${action.effect} from stack`);
-      const fn = effects[action.effect];
-      if (fn) fn(this, action.params || {});
+    while(this.stack.length > 0) {
+      const a = this.stack.pop();
+      const fn = effects[a.effect];
+      if (fn) fn(this, a.params || {});
       this.processDeaths();
     }
   }
 
-  // ===== Intents =====
-  handleIntent(playerId, intent){
-    // If priority active -> allow responses (or pass)
+  // ================= Intents (incl. set_deck, mulligan) =================
+  handleIntent(playerId, msg) {
+    // differentiate top-level messages (some clients send {type:'create_match'} or {type:'intent', intent:...})
+    const intent = msg.intent || msg;
+
+    // Deck set endpoint (allow before match start or while)
+    if (intent.type === 'set_deck') {
+      const deckList = intent.deck || [];
+      const ok = this.setDeckForPlayer(playerId, deckList);
+      if (ok) this.sendState(playerId);
+      return;
+    }
+
+    // Mulligan (player sends keep list)
+    if (intent.type === 'mulligan') {
+      const keep = intent.keep || [];
+      this.applyMulligan(playerId, keep);
+      this.sendState(playerId);
+      return;
+    }
+
+    // priority active branch (respond/pass)
     if (this.priority.active) {
       if (intent.type === 'pass') { this.playerPass(playerId); return; }
-
       if (intent.type === 'play_card') {
+        // allow responses from either player (cost must be paid)
         const player = this.players[playerId];
         const idx = player.hand.indexOf(intent.cardId);
         if (idx === -1) return;
         const def = this.cards[intent.cardId];
         if (!def) return;
         const cost = Number(def.cost || 0);
-        if ((player.currentMana || 0) < cost) { this.log(`Player ${playerId} can't pay response cost`); return; }
+        if ((player.currentMana || 0) < cost) return;
         const speed = def.speed || 'Slow';
         player.hand.splice(idx,1);
         player.currentMana -= cost;
-        // build action — for unit-type we Summon, for spell we push its first effect (simple)
-        if (def.type === 'unit') {
-          const action = { effect: 'Summon', params: { playerId, cardId: intent.cardId }, sourcePlayerId: playerId, speed };
-          this.pushToStack(action);
-        } else if (def.type === 'spell') {
-
-    // 1. script > effects
-    if (def.script) {
-        const ast = parse(def.script);
-        executeScript(this, playerId, ast, intent.targetId);
-    }
-
-    // 2. efeitos tradicionais (mantém compatibilidade)
-    for (const ef of def.effects || []) {
-        this.pushToStack({ effect: ef.action, params: { ...ef, playerId } });
-    }
-}
-
+        if (def.type === 'unit') this.pushToStack({ effect:'Summon', params:{ playerId, cardId: intent.cardId }, sourcePlayerId: playerId, speed });
+        else if (def.type === 'spell') {
+          for (const ef of def.effects || []) {
+            const params = Object.assign({ playerId }, ef);
+            if (intent.targetId && ef.target && ef.target.type === 'entity') params.target = { type:'entity', id: intent.targetId };
+            this.pushToStack({ effect: ef.action, params, sourcePlayerId: playerId, speed: def.speed || 'Slow' });
+          }
+        }
         return;
       }
-
-      // allow attack only from current player and if in COMBAT
       if (intent.type === 'attack') {
         if (playerId !== this.turn.currentPlayerId) return;
         if (this.turn.phase !== 'COMBAT') return;
-        // build payload and fire OnAttack to allow keywords to handle it
         const attacker = this.findEntityById(intent.attackerId);
         const target = this.findEntityById(intent.targetId);
         if (!attacker || !target) return;
+        // OnAttack event -> allow keywords to intercept
         const payload = { attacker, target, handled: false, sourcePlayerId: playerId };
-        // emit to keywords/listeners
         this.emit('OnAttack', payload);
-        // if payload.handled === true, keywords handled attack (no default push)
-        if (payload.handled) {
-          this.log('Attack handled by keyword(s)');
-          // processDeaths in case keywords queued things
+        if (!payload.handled) {
+          this.pushToStack({ effect:'DealDamage', params:{ value: attacker.attack, target: { type:'entity', id: target.id }, source: attacker }, sourcePlayerId: playerId, speed: 'Slow' });
+          this.pushToStack({ effect:'DealDamage', params:{ value: target.attack, target: { type:'entity', id: attacker.id }, source: target }, sourcePlayerId: playerId, speed: 'Slow' });
+        } else {
           this.processDeaths();
-          return;
         }
-        // default: push two DealDamage actions (will open priority)
-        this.pushToStack({ effect: 'DealDamage', params: { value: attacker.attack, target: { type:'entity', id: target.id }, source: attacker }, sourcePlayerId: playerId, speed: 'Slow' });
-        this.pushToStack({ effect: 'DealDamage', params: { value: target.attack, target: { type:'entity', id: attacker.id }, source: target }, sourcePlayerId: playerId, speed: 'Slow' });
         return;
       }
-
-      // ignore other intents during priority
       return;
     }
 
-    // No priority active: normal flow
+    // No priority open: normal flow (play, attack, end_phase)
     if (intent.type === 'play_card') {
       if (playerId !== this.turn.currentPlayerId) return;
       if (!['MAIN'].includes(this.turn.phase)) return;
@@ -304,15 +252,27 @@ class Engine extends Emitter {
       const def = this.cards[intent.cardId];
       if (!def) return;
       const cost = Number(def.cost || 0);
-      if ((player.currentMana || 0) < cost) { this.log(`not enough mana`); return; }
+      if ((player.currentMana || 0) < cost) return;
       const speed = def.speed || 'Slow';
       player.hand.splice(idx,1);
       player.currentMana -= cost;
+      // For units: summon (entity on board)
       if (def.type === 'unit') {
         const action = { effect: 'Summon', params: { playerId, cardId: intent.cardId }, sourcePlayerId: playerId, speed };
         if (speed === 'Burst') this.pushToStack({ ...action, speed: 'Burst' });
         else this.pushToStack(action);
       } else if (def.type === 'spell') {
+        if (def.script) {
+          // scripts handled by script_runtime if present (it should push actions)
+          const { parse } = require('./script_parser');
+          const { executeScript } = require('./script_runtime');
+          try {
+            const ast = parse(def.script);
+            executeScript(this, playerId, ast, intent.targetId);
+          } catch (e) {
+            this.log('Script parse error: ' + e);
+          }
+        }
         for (const ef of def.effects || []) {
           const params = Object.assign({ playerId }, ef);
           if (intent.targetId && ef.target && ef.target.type === 'entity') params.target = { type:'entity', id: intent.targetId };
@@ -331,15 +291,12 @@ class Engine extends Emitter {
       const attacker = this.findEntityById(intent.attackerId);
       const target = this.findEntityById(intent.targetId);
       if (!attacker || !target) return;
-      // emit OnAttack so keywords can intercept even when no priority window
       const payload = { attacker, target, handled: false, sourcePlayerId: playerId };
       this.emit('OnAttack', payload);
-      if (payload.handled) {
-        this.processDeaths();
-        return;
-      }
-      this.pushToStack({ effect: 'DealDamage', params: { value: attacker.attack, target: { type:'entity', id: target.id }, source: attacker }, sourcePlayerId: playerId, speed: 'Slow' });
-      this.pushToStack({ effect: 'DealDamage', params: { value: target.attack, target: { type:'entity', id: attacker.id }, source: target }, sourcePlayerId: playerId, speed: 'Slow' });
+      if (!payload.handled) {
+        this.pushToStack({ effect:'DealDamage', params:{ value: attacker.attack, target: { type:'entity', id: target.id }, source: attacker }, sourcePlayerId: playerId, speed: 'Slow' });
+        this.pushToStack({ effect:'DealDamage', params:{ value: target.attack, target: { type:'entity', id: attacker.id }, source: target }, sourcePlayerId: playerId, speed: 'Slow' });
+      } else this.processDeaths();
       return;
     }
 
@@ -348,23 +305,84 @@ class Engine extends Emitter {
       this.advancePhase();
       return;
     }
+  }
 
-    if (intent.type === 'pass') {
-      // no-op outside priority
-      return;
+  // helper find entity across boards
+  findEntityById(eid) {
+    for (const p of Object.values(this.players)) {
+      for (const u of p.board) if (u.id === eid) return u;
+    }
+    return null;
+  }
+
+  // ================= Turn / Phase / Draw using zones =================
+  start() {
+    // If decks are empty for players, auto-fill with all card IDs (fallback)
+    for (const pid of this.playerOrder) {
+      const p = this.players[pid];
+      if (!p.deck || p.deck.length === 0) {
+        p.deck = Object.keys(this.cards).slice();
+        p.deck.sort(()=>Math.random()-0.5);
+      }
+      // draw 3
+      for (let i=0;i<3;i++) {
+        if (p.deck.length === 0) break;
+        p.hand.push(p.deck.shift());
+      }
+      this.sendState(pid);
+    }
+
+    this.turn.number = 1;
+    this.turn.currentPlayerIndex = 0;
+    this.turn.currentPlayerId = this.playerOrder[0];
+    this.turn.phase = 'DRAW';
+    this.handlePhaseStart();
+  }
+
+  handlePhaseStart() {
+    const phase = this.turn.phase;
+    const pid = this.turn.currentPlayerId;
+    if (phase === 'DRAW') {
+      const p = this.players[pid];
+      p.maxMana = Math.min(MAX_MANA, (p.maxMana || 0) + 1);
+      p.currentMana = p.maxMana;
+      // draw 1
+      if (p.deck.length > 0) p.hand.push(p.deck.shift());
+      this.advancePhase();
+      this.broadcastState();
     }
   }
 
-  // ===== State send / broadcast =====
-  broadcastState(){ for (const pid of Object.keys(this.players)) this.sendState(pid); }
+  advancePhase() {
+    const idx = PHASES.indexOf(this.turn.phase);
+    if (idx === -1) { this.turn.phase = PHASES[0]; return; }
+    if (idx + 1 < PHASES.length) this.turn.phase = PHASES[idx+1];
+    else return this.endTurn();
+    this.handlePhaseStart();
+    this.broadcastState();
+  }
 
-  sendState(playerId){
-    const p = this.players[playerId];
+  endTurn() {
+    this.turn.currentPlayerIndex = (this.turn.currentPlayerIndex + 1) % this.playerOrder.length;
+    this.turn.currentPlayerId = this.playerOrder[this.turn.currentPlayerIndex];
+    this.turn.number++;
+    this.turn.phase = 'DRAW';
+    this.handlePhaseStart();
+    this.broadcastState();
+  }
+
+  // ================= Send / Broadcast =================
+  broadcastState() {
+    for (const pid of Object.keys(this.players)) this.sendState(pid);
+  }
+
+  sendState(pid) {
+    const p = this.players[pid];
     if (!p || !p.socket) return;
     const dto = {
       type: 'state',
-      me: { hand: p.hand, board: p.board, life: p.life, currentMana: p.currentMana, maxMana: p.maxMana },
-      opponents: Object.values(this.players).filter(x=>x.id!==playerId).map(o=>({ id: o.id, board: o.board, life: o.life, currentMana: o.currentMana, maxMana: o.maxMana })),
+      me: { hand: p.hand, board: p.board, graveyard: p.graveyard, exile: p.exile, deckCount: p.deck.length, life: p.life, currentMana: p.currentMana, maxMana: p.maxMana },
+      opponents: Object.values(this.players).filter(x=>x.id!==pid).map(o=>({ id: o.id, board: o.board, graveyardCount: o.graveyard.length, deckCount: o.deck.length, life: o.life })),
       turn: this.turn,
       priority: { active: this.priority.active, passes: this.priority.passes },
       stackDepth: this.stack.length
@@ -372,10 +390,31 @@ class Engine extends Emitter {
     p.socket.send(JSON.stringify(dto));
   }
 
-  // ===== Keywords loader =====
+  // ================= Persistence (debug/replay) =================
+  saveGameTo(pathOut) {
+    const state = {
+      players: this.players,
+      stack: this.stack,
+      turn: this.turn,
+      meta: this.meta
+    };
+    saveGame(pathOut, state);
+  }
+
+  loadGameFrom(pathIn) {
+    const obj = loadGame(pathIn);
+    if (!obj) return;
+    // naive restore (for debug only)
+    this.players = obj.players;
+    this.stack = obj.stack || [];
+    this.turn = obj.turn || this.turn;
+    this.log(`Loaded saved game ${pathIn}`);
+  }
+
+  // Keywords loader
   loadKeywords() {
     try {
-      const kwDir = path.resolve(__dirname, 'keywords');
+      const kwDir = path.join(__dirname, 'keywords');
       if (!fs.existsSync(kwDir)) return;
       const files = fs.readdirSync(kwDir).filter(f=>f.endsWith('.js'));
       for (const f of files) {
