@@ -1,0 +1,66 @@
+{
+  "cards": [
+    {
+      "id": "sun_strider",
+      "name": "Sun Strider",
+      "type": "unit",
+      "cost": 2,
+      "stats": { "attack": 2, "health": 2 },
+      "regions": ["solaris"],
+      "keywords": []
+    },
+    {
+      "id": "abyss_siphon",
+      "name": "Abyss Siphon",
+      "type": "unit",
+      "cost": 3,
+      "stats": { "attack": 2, "health": 3 },
+      "regions": ["abyss"],
+      "keywords": ["drain"],
+      "effects": [
+        { "action": "DealDamage", "value": 1, "target": { "type": "entity" } },
+        { "action": "Heal", "value": 1, "target": { "type": "player" } }
+      ]
+    },
+    {
+      "id": "oakward_goliath",
+      "name": "Oakward Goliath",
+      "type": "unit",
+      "cost": 4,
+      "stats": { "attack": 4, "health": 5 },
+      "regions": ["natureborn"],
+      "keywords": ["regen"]
+    },
+    {
+      "id": "gear_hound",
+      "name": "Gear Hound",
+      "type": "unit",
+      "cost": 2,
+      "stats": { "attack": 2, "health": 1 },
+      "regions": ["mechanix"],
+      "keywords": ["quickattack"]
+    },
+
+    // Champions: have 'champion' flag, an 'evolveTo' reference and evolution condition
+    {
+      "id": "solaris_hero",
+      "name": "Solari Champion",
+      "type": "unit",
+      "cost": 5,
+      "stats": { "attack": 3, "health": 5 },
+      "regions": ["solaris"],
+      "champion": true,
+      "evolveTo": { "cardId": "solaris_hero_evolved", "condition": { "playCount": 3 } },
+      "keywords": ["solar"]
+    },
+    {
+      "id": "solaris_hero_evolved",
+      "name": "Solari Champion (Evolved)",
+      "type": "unit",
+      "cost": 0,
+      "stats": { "attack": 6, "health": 8 },
+      "regions": ["solaris"],
+      "keywords": ["overwhelm","solar"]
+    }
+  ]
+}

@@ -1,0 +1,51 @@
+{
+  "regions": [
+    {
+      "id": "solaris",
+      "name": "Solaris",
+      "keywords": ["solar", "overwhelm"],
+      "deckRules": { "maxCopies": 3, "minCards": 30 },
+      "passives": [
+        { "event": "OnTurnStart", "action": "GainAttackAllied", "value": 1, "scope": "owner" },
+        { "event": "OnEnterPlay", "action": "GrantKeywordOnEnter", "keyword": "solar" }
+      ]
+    },
+    {
+      "id": "abyss",
+      "name": "Abyss",
+      "keywords": ["drain", "poison"],
+      "deckRules": { "maxCopies": 3, "minCards": 30 },
+      "passives": [
+        { "event": "OnDamageDealt", "action": "ReduceDamageSelf", "amount": 0 } 
+      ]
+    },
+    {
+      "id": "natureborn",
+      "name": "Natureborn",
+      "keywords": ["regen", "growth"],
+      "deckRules": { "maxCopies": 3, "minCards": 30 },
+      "passives": [
+        { "event": "OnTurnStart", "action": "GainAttackAllied", "value": 0, "scope": "owner" },
+        { "event": "OnEnterPlay", "action": "GrantKeywordOnEnter", "keyword": "regen" }
+      ]
+    },
+    {
+      "id": "mechanix",
+      "name": "Mechanix",
+      "keywords": ["invent", "quickattack"],
+      "deckRules": { "maxCopies": 3, "minCards": 30 },
+      "passives": [
+        { "event": "OnEnterPlay", "action": "GrantKeywordOnEnter", "keyword": "invent" }
+      ]
+    },
+    {
+      "id": "chaos",
+      "name": "Chaos",
+      "keywords": ["chaotic", "transform"],
+      "deckRules": { "maxCopies": 3, "minCards": 30 },
+      "passives": [
+        { "event": "OnDie", "action": "GrantKeywordOnEnter", "keyword": "transform" }
+      ]
+    }
+  ]
+}

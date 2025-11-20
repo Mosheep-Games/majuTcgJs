@@ -106,3 +106,14 @@ Este repositório contém um **motor TCG data-driven** em Node.js (servidor auto
 - Replacement effects declarativos: `replacement` no JSON de cartas permite substituir destino (ex.: "em vez de ir ao graveyard, vá para exile").
 - Novos efeitos utilitários: `Recall`, `Obliterate`, `ReturnToHand`, `Revive`, `Reanimate`.
 - A pipeline de morte processa replacements antes de mover entidades para zonas finais.
+
+# PASSO 10 — Regiões / Fações / Campeões — KAOS Edition
+
+Inclui:
+- regions.json: definicoes de regiões (Solaris, Abyss, Natureborn, Mechanix, Chaos)
+- engine/regions.js: loader + registrador de passivas regionais
+- champion system: cada campeão tem campo `champion: true` e `evolveTo` com condição (ex.: playCount)
+- resolver.js atualizado: integra regions, champions e eventos
+- effects.js atualizado com GainAttackAllied e ChampionEvolve
+
+Assinado: KAOS
