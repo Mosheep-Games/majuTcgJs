@@ -1,4 +1,4 @@
-// engine/resolver.js — Engine class with turn system, phases, and improved targeting
+// engine/resolver.js — Engine class with turn system, phases, targeting AND mana system
 const fs = require('fs');
 const path = require('path');
 const { Emitter } = require('./events');
@@ -7,6 +7,7 @@ const { loadCards } = require('./state');
 const { v4: uuidv4 } = require('uuid');
 
 const PHASES = ['DRAW','MAIN','COMBAT','END'];
+const MAX_MANA = 10;
 
 class Engine extends Emitter {
   constructor(cardsMap) {
@@ -30,7 +31,8 @@ class Engine extends Emitter {
 
   addPlayer(){
     const id = uuidv4();
-    this.players[id] = { id, deck: [], hand: [], board: [], socket: null, life: 20 };
+    // Initialize mana: start at 0, maxMana will ramp on first turn
+    this.players[id] = { id, deck: [], hand: [], board: [], socket: null, life: 20, currentMana: 0, maxMana: 0 };
     this.playerOrder.push(id);
     return id;
   }
@@ -96,10 +98,18 @@ class Engine extends Emitter {
     const phase = this.turn.phase;
     const playerId = this.turn.currentPlayerId;
     this.log(`Phase start: ${phase} for ${playerId}`);
-    // automatic behaviors on phases
+
+    // WHEN A TURN STARTS (DRAW phase) we also handle mana ramp
     if (phase === 'DRAW') {
-      // draw a card
+      // mana ramp: increase maxMana by 1 up to MAX_MANA, then refill currentMana
       const player = this.getPlayer(playerId);
+      if (player) {
+        player.maxMana = Math.min(MAX_MANA, (player.maxMana || 0) + 1);
+        player.currentMana = player.maxMana;
+        this.log(`Player ${playerId} mana set to ${player.currentMana}/${player.maxMana}`);
+      }
+
+      // draw a card
       if (player) {
         const card = player.deck.shift();
         if (card) {
@@ -110,7 +120,7 @@ class Engine extends Emitter {
       // move to MAIN
       this.advancePhase();
     }
-    // MAIN: wait for intents
+    // MAIN: wait for intents (plays)
     // COMBAT: waits for attack intents
     // END: conclude and pass turn
   }
@@ -170,10 +180,21 @@ class Engine extends Emitter {
       const player = this.players[playerId];
       const idx = player.hand.indexOf(intent.cardId);
       if (idx === -1) return; // not in hand
-      // consume card
-      player.hand.splice(idx,1);
       const def = this.cards[intent.cardId];
       if (!def) return;
+
+      // --- MANA CHECK ---
+      const cost = (def.cost != null) ? Number(def.cost) : 0;
+      if ((player.currentMana || 0) < cost) {
+        this.log(`Player ${playerId} does not have enough mana (${player.currentMana}/${cost}) to play ${intent.cardId}`);
+        return; // ignore the intent
+      }
+
+      // consume card from hand and subtract mana
+      player.hand.splice(idx,1);
+      player.currentMana = (player.currentMana || 0) - cost;
+      this.log(`Player ${playerId} paid ${cost} mana for ${intent.cardId} -> now ${player.currentMana}/${player.maxMana}`);
+
       if (def.type === 'unit'){
         this.pushToStack({ effect: 'Summon', params: { playerId, cardId: intent.cardId } });
       } else if (def.type === 'spell'){
@@ -206,8 +227,8 @@ class Engine extends Emitter {
     if (!p || !p.socket) return;
     const dto = {
       type: 'state',
-      me: { hand: p.hand, board: p.board, life: p.life },
-      opponents: Object.values(this.players).filter(x=>x.id!==playerId).map(o=>({ id: o.id, board: o.board, life: o.life })),
+      me: { hand: p.hand, board: p.board, life: p.life, currentMana: p.currentMana, maxMana: p.maxMana },
+      opponents: Object.values(this.players).filter(x=>x.id!==playerId).map(o=>({ id: o.id, board: o.board, life: o.life, currentMana: o.currentMana, maxMana: o.maxMana })),
       turn: this.turn
     };
     p.socket.send(JSON.stringify(dto));
