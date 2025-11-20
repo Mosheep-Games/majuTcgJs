@@ -1,10 +1,12 @@
-// engine/resolver.js — Engine class gluing everything (MVP) + keyword system
+// engine/resolver.js — Engine class with turn system, phases, and improved targeting
 const fs = require('fs');
 const path = require('path');
 const { Emitter } = require('./events');
 const effects = require('./effects');
 const { loadCards } = require('./state');
 const { v4: uuidv4 } = require('uuid');
+
+const PHASES = ['DRAW','MAIN','COMBAT','END'];
 
 class Engine extends Emitter {
   constructor(cardsMap) {
@@ -16,9 +18,11 @@ class Engine extends Emitter {
     this.entityCounter = 1;
     this.stack = [];
 
+    // turn state
+    this.turn = { currentPlayerIndex: 0, phase: null, number: 0, currentPlayerId: null };
+
     // keyword registry
     this.keywords = {};
-    // make sure Emitter can call applyKeywordEvent via this.applyKeywordEvent
     this.loadKeywords();
   }
 
@@ -51,22 +55,92 @@ class Engine extends Emitter {
       }
       this.sendState(player.id);
     }
+    // init turn
+    this.turn.number = 1;
+    this.turn.currentPlayerIndex = 0;
+    this.turn.currentPlayerId = this.playerOrder[0];
+    this.turn.phase = 'DRAW';
     this.emit('GameStart', {});
+    this.emit('TurnStart', { playerId: this.turn.currentPlayerId, phase: this.turn.phase });
+    this.handlePhaseStart();
   }
 
   log(m){ console.log('[Engine]', m); }
 
   getPlayer(id){ return this.players[id]; }
 
+  // find entity by id across boards
+  findEntityById(eid) {
+    for (const p of Object.values(this.players)) {
+      for (const u of p.board) {
+        if (u.id === eid) return u;
+      }
+    }
+    return null;
+  }
+
   resolveTarget(spec){
-    // MVP: spec like {type:'player', playerId:'...'} or {type:'board', playerId:'...'}
+    // spec can be: {type:'player', playerId:'...'} or {type:'entity', id:'e1'} or {type:'board', playerId:'...', index:0}
     if (!spec) return null;
     if (spec.type === 'player') return this.players[spec.playerId];
+    if (spec.type === 'entity') return this.findEntityById(spec.id);
     if (spec.type === 'board') {
       const p = this.players[spec.playerId];
       return p.board[spec.index || 0];
     }
     return null;
+  }
+
+  // ---- Turn / Phase management ----
+  handlePhaseStart() {
+    const phase = this.turn.phase;
+    const playerId = this.turn.currentPlayerId;
+    this.log(`Phase start: ${phase} for ${playerId}`);
+    // automatic behaviors on phases
+    if (phase === 'DRAW') {
+      // draw a card
+      const player = this.getPlayer(playerId);
+      if (player) {
+        const card = player.deck.shift();
+        if (card) {
+          player.hand.push(card);
+          this.emit('OnDraw', { playerId, cardId: card });
+        }
+      }
+      // move to MAIN
+      this.advancePhase();
+    }
+    // MAIN: wait for intents
+    // COMBAT: waits for attack intents
+    // END: conclude and pass turn
+  }
+
+  advancePhase() {
+    const idx = PHASES.indexOf(this.turn.phase);
+    if (idx === -1) { this.turn.phase = PHASES[0]; return; }
+    if (idx + 1 < PHASES.length) {
+      this.turn.phase = PHASES[idx+1];
+    } else {
+      // end turn -> next player
+      this.endTurn();
+      return;
+    }
+    this.emit('PhaseChange', { phase: this.turn.phase, playerId: this.turn.currentPlayerId });
+    this.handlePhaseStart();
+    // broadcast state
+    for (const pid of Object.keys(this.players)) this.sendState(pid);
+  }
+
+  endTurn() {
+    this.log(`Ending turn ${this.turn.number} for ${this.turn.currentPlayerId}`);
+    // rotate player
+    this.turn.currentPlayerIndex = (this.turn.currentPlayerIndex + 1) % this.playerOrder.length;
+    this.turn.currentPlayerId = this.playerOrder[this.turn.currentPlayerIndex];
+    this.turn.number += 1;
+    this.turn.phase = 'DRAW';
+    this.emit('TurnChange', { playerId: this.turn.currentPlayerId, number: this.turn.number });
+    this.handlePhaseStart();
+    for (const pid of Object.keys(this.players)) this.sendState(pid);
   }
 
   // ---- Stack / resolution ----
@@ -85,25 +159,45 @@ class Engine extends Emitter {
 
   // ---- Intents ----
   handleIntent(playerId, intent){
-    // intents: {type:'play_card', cardId}
+    // guard: only current player can issue intents in MAIN or COMBAT depending on action
+    if (playerId !== this.turn.currentPlayerId) {
+      this.log(`Ignoring intent from non-active player ${playerId}`);
+      return;
+    }
+    // intents: {type:'play_card', cardId, target?}
     if (intent.type === 'play_card'){
+      if (!['MAIN'].includes(this.turn.phase)) { this.log('Cannot play cards outside MAIN phase'); return; }
       const player = this.players[playerId];
       const idx = player.hand.indexOf(intent.cardId);
       if (idx === -1) return; // not in hand
       // consume card
       player.hand.splice(idx,1);
-      // simple: if unit -> summon, if spell -> deal damage
       const def = this.cards[intent.cardId];
       if (!def) return;
       if (def.type === 'unit'){
         this.pushToStack({ effect: 'Summon', params: { playerId, cardId: intent.cardId } });
       } else if (def.type === 'spell'){
-        // example: spell has effects array
         for (const ef of def.effects||[]){ 
-          this.pushToStack({ effect: ef.action, params: Object.assign({ playerId }, ef) });
+          // attach source info if needed
+          const params = Object.assign({ playerId }, ef);
+          // if intent.targetId present and ef.target.type==='entity' we map it
+          if (intent.targetId && ef.target && ef.target.type==='entity') params.target = { type:'entity', id: intent.targetId };
+          this.pushToStack({ effect: ef.action, params });
         }
       }
       this.sendState(playerId);
+    } else if (intent.type === 'attack'){
+      if (!['COMBAT'].includes(this.turn.phase)) { this.log('Cannot attack outside COMBAT phase'); return; }
+      // intent: { type:'attack', attackerId, targetId }
+      const attacker = this.findEntityById(intent.attackerId);
+      const target = this.findEntityById(intent.targetId);
+      if (!attacker || !target) return;
+      // simple attack resolution: both deal damage to each other
+      this.pushToStack({ effect: 'DealDamage', params: { value: attacker.attack, target: { type:'entity', id: target.id }, source: attacker } });
+      this.pushToStack({ effect: 'DealDamage', params: { value: target.attack, target: { type:'entity', id: attacker.id }, source: target } });
+    } else if (intent.type === 'end_phase') {
+      // player requests to advance phase
+      this.advancePhase();
     }
   }
 
@@ -113,7 +207,8 @@ class Engine extends Emitter {
     const dto = {
       type: 'state',
       me: { hand: p.hand, board: p.board, life: p.life },
-      opponents: Object.values(this.players).filter(x=>x.id!==playerId).map(o=>({ id: o.id, board: o.board, life: o.life }))
+      opponents: Object.values(this.players).filter(x=>x.id!==playerId).map(o=>({ id: o.id, board: o.board, life: o.life })),
+      turn: this.turn
     };
     p.socket.send(JSON.stringify(dto));
   }
