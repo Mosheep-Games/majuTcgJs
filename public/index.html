@@ -1,19 +1,48 @@
-<!doctype html>
+<!DOCTYPE html>
 <html>
-<head><meta charset="utf-8"><title>TCG Client MVP</title></head>
+<head>
+    <meta charset="utf-8">
+    <title>TCG Client — PIXI Renderer</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #1a1a1d;
+            font-family: Arial;
+            color: white;
+        }
+        #ui {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            z-index: 10;
+        }
+        #joinBtn, #passBtn, #endBtn {
+            padding: 8px 16px;
+            margin-bottom: 8px;
+            background: #444;
+            color: white;
+            border: 1px solid #666;
+            cursor: pointer;
+        }
+    </style>
+</head>
 <body>
-  <h2>TCG Engine MVP — Open two tabs to simulate two players</h2>
-  <div>
-    <button id="join">Create/Join Match</button>
+
+<div id="ui">
+    <button id="joinBtn">Create / Join Match</button><br>
+    <button id="passBtn">Pass</button><br>
+    <button id="endBtn">End Phase</button><br><br>
+
     <div id="info"></div>
-    <div id="turn"></div>
-    <div id="mana"></div>
-    <div id="hand"></div>
-    <div id="board"></div>
-    <div id="opponents"></div>
-    <div id="controls"></div>
-    <div id="attack"></div>
-  </div>
-  <script src="client.js"></script>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/7.3.2/pixi.min.js"></script>
+
+<script src="card_renderer.js"></script>
+<script src="animate.js"></script>
+<script src="renderer.js"></script>
+<script src="client.js"></script>
+
 </body>
 </html>

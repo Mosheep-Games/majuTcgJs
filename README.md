@@ -67,3 +67,14 @@ Este repositório contém um **motor TCG data-driven** em Node.js (servidor auto
   - Quando **todos os jogadores passarem**, a pilha é resolvida **LIFO** (top primeiro).
 - O servidor envia ao cliente `priority.active` e `stackDepth` no estado para permitir UI de respostas.
 - `data/cards/*.json` agora pode ter `speed` (Burst/Fast/Slow) e `cost`.
+
+### Fase 4 — PIXI Renderer (Client Visual)
+
+- Cliente HTML substituído por renderer PIXI.js.
+- Cartas visuais renderizadas com quadros, textos e stats.
+- Mesa (board) e mão renderizados via containers PIXI.
+- Seleção de alvo por clique em unidades.
+- Suporte a "play card", "attack", "pass" e "end phase".
+- Animações simples incluídas (flashRed).
+
+

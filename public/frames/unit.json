@@ -1,11 +1,7 @@
 {
-  "width": 300,
-  "height": 440,
-  "borderRadius": 18,
-  "layers": [
-    { "type": "header", "height": 60 },
-    { "type": "artSlot", "x": 16, "y": 68, "w": 268, "h": 180 },
-    { "type": "description", "x": 16, "y": 260, "w": 268, "h": 120 },
-    { "type": "stats", "attack": {"x": 20, "y": 392}, "health": {"x": 260, "y": 392} }
-  ]
+  "width": 130,
+  "height": 180,
+  "frameColor": "#222222",
+  "borderRadius": 10,
+  "textColor": "#ffffff"
 }
