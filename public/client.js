@@ -1,5 +1,18 @@
 // client.js — conecta com servidor, repassa estado ao renderer
 
+// no topo, garanta que existam elementos
+const phaseEl = document.createElement('div');
+phaseEl.id = 'phaseIndicator';
+phaseEl.style.position = 'absolute';
+phaseEl.style.top = '10px';
+phaseEl.style.right = '10px';
+phaseEl.style.background = 'rgba(0,0,0,0.5)';
+phaseEl.style.padding = '6px 10px';
+phaseEl.style.borderRadius = '6px';
+phaseEl.style.color = '#fff';
+phaseEl.style.zIndex = 9999;
+document.body.appendChild(phaseEl);
+
 let ws = null;
 let playerId = null;
 let renderer = null;
@@ -17,12 +30,17 @@ function connect() {
                 "Joined as: " + playerId;
         }
 
-        if (data.type === "state") {
+        /*if (data.type === "state") {
             if (!renderer) {
                 renderer = new GameRenderer(playerId, ws);
-            }
+            }*/
+
+            if (data.turn) {
+                const phase = data.turn.phase || (data.turn.currentPhase || 'MAIN');
+                phaseEl.innerText = `Turn ${data.turn.number || 1} — Phase: ${phase}`;
+               }
             renderer.update(data);
-        }
+        
     };
 }
 

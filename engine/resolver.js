@@ -11,7 +11,7 @@
 //
 // Observação: Este arquivo é intencionalmente auto-contido e comentado
 // para que você consiga entender e evoluir. Leia os comentários :)
-
+const TurnManager = require('./turns');
 const fs = require('fs');
 const path = require('path');
 const { Emitter } = require('./events');
@@ -26,6 +26,12 @@ class Engine extends Emitter {
     this.players = {};
     this.sockets = {};
     this.playerOrder = [];
+
+    // Turn manager (PASSO 11)
+    this.turns = new TurnManager(this);
+   // when engine starts the game, call this.turns.startGame()
+   // (call startGame from your start() method or after both players joined)
+
 
     this.stack = []; // LIFO list of actions
     this.priority = { active: false, passes: {}, initiator: null };

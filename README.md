@@ -117,3 +117,14 @@ Inclui:
 - effects.js atualizado com GainAttackAllied e ChampionEvolve
 
 Assinado: KAOS
+
+### PASSO 11 — Turn System 2.0 (KAOS)
+
+- Novo módulo: `/engine/turns.js` (TurnManager) — implementa fases:
+  START -> DRAW -> MAIN -> ATTACK_DECLARE -> BLOCK_DECLARE -> DAMAGE_RESOLVE -> END
+- Cada fase abre uma janela de prioridade. O TurnManager chama `engine.openPriority(playerId)` para abrir a janela.
+- As ações automáticas do turno (draw, mana ramp) são executadas pelo TurnManager em `_autoActionsForPhase`.
+- Integrar no resolver: no `start()` chame `this.turns.startGame()`; para avançar fases use `this.turns.nextPhase()`.
+- O cliente agora exibe a fase atual (veja `client.js`).
+- Arquivos assinados KAOS.
+
